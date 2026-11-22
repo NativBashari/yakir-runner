@@ -24,6 +24,18 @@
   .faces { display:flex; gap:18px; justify-content:center; align-items:center; }
   .faces img { width:64px; height:64px; border-radius:50%; object-fit:cover; border:3px solid var(--accent2); }
   .faces img.big { width:96px; height:96px; border-color:var(--accent); }
+  #over { background:rgba(15,11,30,.88); gap:12px; }
+  .tally { display:flex; gap:clamp(20px,6vw,64px); justify-content:center; }
+  .who { display:flex; flex-direction:column; align-items:center; gap:4px; animation:pop .5s ease-out both; }
+  .who.ilana { animation-delay:.15s; }
+  .who img { width:clamp(90px,16vw,150px); height:clamp(90px,16vw,150px); border-radius:50%; object-fit:cover; border:6px solid; }
+  .who.yonit img { border-color:#4fc3ff; } .who.ilana img { border-color:#ff3d7f; }
+  .who b { font-size:clamp(40px,8vw,72px); line-height:1; color:#fff; text-shadow:3px 3px 0 #000; }
+  .who span { color:var(--muted); font-size:18px; font-weight:700; }
+  .snap { font-size:clamp(18px,3vw,26px); font-weight:800; color:#1c1533; background:var(--accent2);
+    padding:8px 20px; border-radius:999px; animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pop { from { transform:scale(.3); opacity:0; } to { transform:scale(1); opacity:1; } }
+  @keyframes pulse { 50% { transform:scale(1.07); } }
 </style>
 </head>
 <body>
@@ -47,7 +59,12 @@
 
   <div id="over" class="overlay hidden">
     <h1>נגמר השידור</h1>
+    <div class="tally">
+      <div class="who yonit"><img src="assets/yonit.png" alt=""><b id="cYonit">0</b><span>יוניתות</span></div>
+      <div class="who ilana"><img src="assets/ilana.png" alt=""><b id="cIlana">0</b><span>אילנות</span></div>
+    </div>
     <p id="finalScore"></p>
+    <div class="snap">📸 צלמו מסך ושלחו לחברים!</div>
     <div class="row"><button id="againBtn">עוד טייק</button>
       <button id="menuBtn" class="secondary">לתפריט</button></div>
   </div>
@@ -86,6 +103,7 @@ const POOLS = {
   ilana: ['taamdi-po', 'rosh-hamemshala', 'yair-golan', 'hakorban-harishon', 'lo-legizanut'],
   hit:   ['kilalta-oti', 'shabarta-pailipot', 'nishbar-hakise', 'lo-lo-lo'],
   power: ['hass-al-haya', 'vidi-pidi', 'you-love-israel', 'guess-88s'],
+  end:   ['rosh-hamemshala'],   // מתנגן במסך הסיום
 };
 const JUMP_VOICE_CHANCE = 0.3;   // כמה פעמים קפיצה תשמיע קול (ולא רק "בּיפּ")
 
@@ -122,6 +140,7 @@ const BEEP = {
   hit:   () => beep(200,.4,'sawtooth',-150),
   power: () => { beep(500,.12); setTimeout(()=>beep(750,.12),110); setTimeout(()=>beep(1000,.2),220); },
   intro: () => {},
+  end:   () => {},
 };
 
 let voice = null, lastClip = {};
@@ -249,8 +268,18 @@ function gameOver() {
   sfx('hit', { force:true });
   const s = Math.floor(score);
   if (s > best) { best = s; store.set('yr_best', s); }
-  $('finalScore').innerHTML = `צברת ${fmt(s)} עוקבים · שיא: ${fmt(best)}<br>יונית: ${counts.yonit} · אילנה: ${counts.ilana}`;
-  setTimeout(() => $('over').classList.remove('hidden'), 900);
+  $('finalScore').textContent = `${fmt(s)} עוקבים · שיא: ${fmt(best)}`;
+  $('cYonit').textContent = counts.yonit;
+  $('cIlana').textContent = counts.ilana;
+  // show the end screen once the hit clip finishes (max 3s), then play the end sound
+  const shownAt = performance.now();
+  const showEnd = () => {
+    if (state !== 'over') return;
+    if (voiceBusy() && performance.now() - shownAt < 3000) return setTimeout(showEnd, 100);
+    $('over').classList.remove('hidden');
+    sfx('end', { force:true, bubble:false });
+  };
+  setTimeout(showEnd, 700);
 }
 
 // ---------- drawing ----------
