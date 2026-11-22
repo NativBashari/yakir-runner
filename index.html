@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>יקיר ראנר</title>
+<style>
+  :root { --bg:#0f0b1e; --panel:#1c1533; --accent:#ff3d7f; --accent2:#ffd23f; --text:#fff; --muted:#b9b0d6; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI",Arial,sans-serif; overflow:hidden; touch-action:manipulation; }
+  #wrap { position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; }
+  canvas { display:block; max-width:100vw; max-height:100vh; aspect-ratio:16/9; width:100%; background:#000; }
+  .overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; text-align:center; background:rgba(15,11,30,.72); padding:16px; }
+  .hidden { display:none !important; }
+  h1 { margin:0; font-size:clamp(32px,7vw,72px); color:var(--accent2); text-shadow:4px 4px 0 var(--accent); }
+  p { margin:0; color:var(--muted); font-size:clamp(14px,2.2vw,20px); }
+  button { font:inherit; font-size:20px; font-weight:700; border:0; border-radius:14px; padding:12px 28px; cursor:pointer;
+    background:var(--accent); color:#fff; box-shadow:0 5px 0 #a3164a; }
+  button:active { transform:translateY(3px); box-shadow:0 2px 0 #a3164a; }
+  button.secondary { background:#3a2f63; box-shadow:0 5px 0 #231b40; font-size:16px; }
+  .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  .faces { display:flex; gap:18px; justify-content:center; align-items:center; }
+  .faces img { width:64px; height:64px; border-radius:50%; object-fit:cover; border:3px solid var(--accent2); }
+  .faces img.big { width:96px; height:96px; border-color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="960" height="540"></canvas>
+
+  <div id="menu" class="overlay">
+    <h1>יקיר ראנר</h1>
+    <div class="faces">
+      <img src="assets/yonit.png" alt="" onerror="this.remove()">
+      <img class="big" src="assets/face.png" alt="" onerror="this.remove()">
+      <img src="assets/ilana.png" alt="" onerror="this.remove()">
+    </div>
+    <p>רצים, אוספים את יונית ואילנה, מתחמקים מטרולים.<br>🎤 מיקרופון = מצב חיקוי (בלתי פגיע)</p>
+    <p>רווח / חץ למעלה / הקשה = קפיצה (אפשר קפיצה כפולה)</p>
+    <div class="row">
+      <button id="startBtn">יאללה, לשידור!</button>
+    </div>
+    <p id="best"></p>
+  </div>
+
+  <div id="over" class="overlay hidden">
+    <h1>נגמר השידור</h1>
+    <p id="finalScore"></p>
+    <div class="row"><button id="againBtn">עוד טייק</button>
+      <button id="menuBtn" class="secondary">לתפריט</button></div>
+  </div>
+</div>
+
+<script>
+// ====== סאונדים: שם קובץ (ב-assets/sounds) → הטקסט שמופיע בבועה ======
+const CLIPS = {
+  'intro-liat':        'ליאת ברקוביץ קרביץ, מתאמת פעולות בשטחים בכירה לשעבר',
+  'shabarta-pailipot': 'למה שברת לי את הפייליפוט?',
+  'kilalta-oti':       'למה קיללת אותי??',
+  'hamahadura':        'המהדורה המרכזית, כל ערב בשמונה',
+  'nishbar-hakise':    'נשבר הכיסא! מה את בודקת?',
+  'hass-al-haya':      'חסס אל חייה!',
+  'lo-lehafria':       'לא להפריע לי',
+  'yonit-ezor-lach':   'אני, יונית לוי, אני אעזור לך',
+  'no-no-no':          'NO NO NO',
+  'vidi-pidi':         'ווידי פידי האסאבאק',
+  'hakorban-harishon': 'אתה הקורבן הראשון',
+  'you-love-israel':   'You love Israel??',
+  'whats-your-name':   "What's your name?",
+  'lo-lo-lo':          'לא לא לא לא לא!',
+  'ma-ze':             'מה זהההה?',
+  'ani-memaheret':     'אני ממהרת',
+  'raanana':           'אתה מגיע לרעננה??',
+  'yair-golan':        'למה דווקא יאיר גולן?',
+  'taamdi-po':         'תעמדי פה בבקשה, גברת',
+  'rosh-hamemshala':   'מי יהיה ראש הממשלה הבא של ישראל?',
+  'lo-legizanut':      'לא לגזענות!',
+};
+// איזה סאונד מתנגן באיזה אירוע (נבחר אקראית מהרשימה)
+const POOLS = {
+  intro: ['intro-liat'],
+  jump:  ['no-no-no', 'ani-memaheret', 'raanana', 'whats-your-name', 'lo-lehafria'],
+  yonit: ['yonit-ezor-lach', 'hamahadura'],
+  ilana: ['taamdi-po', 'rosh-hamemshala', 'yair-golan', 'hakorban-harishon', 'lo-legizanut'],
+  hit:   ['kilalta-oti', 'shabarta-pailipot', 'nishbar-hakise', 'lo-lo-lo'],
+  power: ['hass-al-haya', 'vidi-pidi', 'you-love-israel', 'guess-88s'],
+};
+const JUMP_VOICE_CHANCE = 0.3;   // כמה פעמים קפיצה תשמיע קול (ולא רק "בּיפּ")
+
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
+};
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const W = 960, H = 540, GROUND = 450;
+const $ = id => document.getElementById(id);
+
+// ---------- images ----------
+function loadImg(src) { const im = new Image(); im.ok = false; im.onload = () => im.ok = true; im.src = src; return im; }
+const IMG = { face: loadImg('assets/face.png'), yonit: loadImg('assets/yonit.png'), ilana: loadImg('assets/ilana.png') };
+
+// ---------- sound ----------
+let actx = null;
+function beep(freq, dur, type='square', slide=0) {
+  try {
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    if (slide) o.frequency.linearRampToValueAtTime(freq+slide, actx.currentTime+dur);
+    g.gain.setValueAtTime(.12, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, actx.currentTime+dur);
+    o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime+dur);
+  } catch(e){}
+}
+const BEEP = {
+  jump:  () => beep(420,.12,'square',300),
+  yonit: () => beep(880,.1,'triangle',400),
+  ilana: () => beep(660,.1,'triangle',500),
+  hit:   () => beep(200,.4,'sawtooth',-150),
+  power: () => { beep(500,.12); setTimeout(()=>beep(750,.12),110); setTimeout(()=>beep(1000,.2),220); },
+  intro: () => {},
+};
+
+let voice = null, lastClip = {};
+function voiceBusy() { return voice && !voice.paused && !voice.ended; }
+function stopVoice() { if (voice) { try { voice.pause(); } catch(e){} } voice = null; }
+function sfx(event, { force=false, chance=1, bubble=true } = {}) {
+  const pool = POOLS[event] || [];
+  if (!pool.length || Math.random() > chance || (voiceBusy() && !force)) { BEEP[event](); return; }
+  let name = pool[Math.floor(Math.random()*pool.length)];
+  if (pool.length > 1 && name === lastClip[event]) name = pool[(pool.indexOf(name)+1) % pool.length];
+  lastClip[event] = name;
+  stopVoice();
+  const a = new Audio(`assets/sounds/${name}.mp3`);
+  voice = a;
+  a.play().then(() => { if (bubble && CLIPS[name]) say(CLIPS[name], Math.min(4, Math.max(1.6, a.duration || 2))); })
+          .catch(() => { if (voice === a) voice = null; BEEP[event](); });
+}
+
+// ---------- game state ----------
+let state = 'menu', last = 0, t = 0;
+let player, obstacles, items, particles, bubble, speed, score, spawnT, itemT, power, shake, counts;
+let best = +(store.get('yr_best') || 0);
+
+function reset() {
+  player = { x:150, y:GROUND, vy:0, w:56, h:92, jumps:0, onGround:true, squash:0 };
+  obstacles = []; items = []; particles = []; bubble = null;
+  speed = 380; score = 0; spawnT = 1.6; itemT = .6; power = 0; shake = 0; t = 0;
+  counts = { yonit:0, ilana:0 };
+}
+
+function jump() {
+  if (state !== 'playing') return;
+  if (player.jumps < 2) {
+    player.vy = player.jumps === 0 ? -860 : -760;
+    player.jumps++; player.onGround = false; player.squash = -.25;
+    sfx('jump', { chance: JUMP_VOICE_CHANCE });
+  }
+}
+
+function say(text, dur=1.8) { bubble = { text, life:dur }; }
+function fmt(n) { n = Math.floor(n); return n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1000 ? (n/1000).toFixed(1)+'K' : ''+n; }
+
+const OBST = [
+  { kind:'troll',   w:54, h:64, y:0,   label:'טרול' },
+  { kind:'troll',   w:54, h:64, y:0,   label:'טרול' },
+  { kind:'algo',    w:90, h:46, y:0,   label:'האלגוריתם' },
+  { kind:'comment', w:120,h:44, y:120, label:'"מי זה בכלל?"' },
+  { kind:'comment', w:120,h:44, y:120, label:'"לא מצחיק"' },
+  { kind:'tall',    w:46, h:110,y:0,   label:'דיסלייק' },
+];
+
+function spawnObstacle() {
+  const o = { ...OBST[Math.floor(Math.random()*OBST.length)] };
+  o.x = W + 40; o.top = GROUND - o.y - o.h; o.wob = Math.random()*6;
+  obstacles.push(o);
+}
+function spawnItem() {
+  const isMic = Math.random() < .09 && power <= 0;
+  const h = [40, 120, 200][Math.floor(Math.random()*3)];
+  const kind = isMic ? 'mic' : (Math.random() < .5 ? 'yonit' : 'ilana');
+  const n = isMic ? 1 : 1 + Math.floor(Math.random()*3);
+  for (let i=0;i<n;i++) items.push({ x:W+40+i*58, y:GROUND - h - 20*Math.sin(i), r:22, kind, t:Math.random()*6 });
+}
+
+function burst(x,y,color,n=12) {
+  for (let i=0;i<n;i++) particles.push({ x,y, vx:(Math.random()-.5)*400, vy:(Math.random()-.9)*400, life:.6, color });
+}
+
+function hitBox(a,b) { return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
+
+function update(dt) {
+  t += dt;
+  speed = Math.min(380 + t*9, 900);
+  score += dt * speed * .05;
+
+  player.vy += 2300 * dt;
+  player.y += player.vy * dt;
+  if (player.y >= GROUND) {
+    if (!player.onGround) player.squash = .2;
+    player.y = GROUND; player.vy = 0; player.jumps = 0; player.onGround = true;
+  }
+  player.squash *= .85;
+
+  spawnT -= dt;
+  if (spawnT <= 0) { spawnObstacle(); spawnT = Math.max(.55, 1.6 - t*.012) + Math.random()*.8; }
+  itemT -= dt;
+  if (itemT <= 0) { spawnItem(); itemT = 1.1 + Math.random()*1.3; }
+
+  const pb = { x:player.x - player.w/2 + 8, y:player.y - player.h + 10, w:player.w - 16, h:player.h - 12 };
+
+  for (const o of obstacles) {
+    o.x -= speed * dt;
+    if (!o.dead && hitBox(pb, { x:o.x+6, y:o.top+6, w:o.w-12, h:o.h-12 })) {
+      if (power > 0) { o.dead = true; burst(o.x+o.w/2, o.top+o.h/2, '#ffd23f', 18); score += 25; BEEP.yonit(); }
+      else return gameOver();
+    }
+  }
+  obstacles = obstacles.filter(o => o.x > -200 && !o.dead);
+
+  for (const it of items) {
+    it.x -= speed * dt; it.t += dt;
+    const dx = it.x - player.x, dy = it.y - (player.y - player.h/2);
+    if (!it.got && dx*dx + dy*dy < (it.r+34)**2) {
+      it.got = true;
+      if (it.kind === 'mic') { power = 5; sfx('power', { force:true }); burst(it.x,it.y,'#ffd23f',24); }
+      else {
+        score += 10; counts[it.kind]++;
+        sfx(it.kind);
+        burst(it.x, it.y, it.kind === 'yonit' ? '#4fc3ff' : '#ff3d7f', 10);
+      }
+    }
+  }
+  items = items.filter(i => i.x > -60 && !i.got);
+
+  for (const p of particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 900*dt; p.life -= dt; }
+  particles = particles.filter(p => p.life > 0);
+
+  if (power > 0) power -= dt;
+  if (bubble) { bubble.life -= dt; if (bubble.life <= 0) bubble = null; }
+  if (shake > 0) shake -= dt;
+}
+
+function gameOver() {
+  state = 'over'; shake = .4;
+  sfx('hit', { force:true });
+  const s = Math.floor(score);
+  if (s > best) { best = s; store.set('yr_best', s); }
+  $('finalScore').innerHTML = `צברת ${fmt(s)} עוקבים · שיא: ${fmt(best)}<br>יונית: ${counts.yonit} · אילנה: ${counts.ilana}`;
+  setTimeout(() => $('over').classList.remove('hidden'), 900);
+}
+
+// ---------- drawing ----------
+function rr(x,y,w,h,r) { ctx.beginPath(); ctx.roundRect(x,y,w,h,r); }
+
+function drawBG() {
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#2a1458'); g.addColorStop(1,'#ff6a8a');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha = .12; ctx.fillStyle = '#fff';
+  for (let i=0;i<4;i++) {
+    const x = ((i*300 - t*20) % 1200 + 1200) % 1200 - 120;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x-90,GROUND); ctx.lineTo(x+90,GROUND); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#3b1d6e';
+  const off = (t*speed*.15) % 160;
+  for (let i=-1;i<8;i++) {
+    const bx = i*160 - off, bh = 80 + ((i*73 + Math.floor((t*speed*.15)/160)*37) % 5 + 5) % 5 * 30;
+    ctx.fillRect(bx, GROUND - bh, 120, bh);
+  }
+  ctx.fillStyle = '#1b1030'; ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle = '#ff3d7f';
+  const s = (t*speed) % 60;
+  for (let x=-s; x<W; x+=60) ctx.fillRect(x, GROUND+8, 30, 4);
+}
+
+function drawCircleImg(img, cx, cy, r, ring) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.closePath();
+  if (img && img.ok) {
+    ctx.clip();
+    const s = Math.min(img.width, img.height);
+    ctx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, cx-r, cy-r, r*2, r*2);
+  } else { ctx.fillStyle = '#f2c29b'; ctx.fill(); }
+  ctx.restore();
+  ctx.lineWidth = 3; ctx.strokeStyle = ring;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+}
+
+function drawPlayer() {
+  const p = player, sq = p.squash;
+  const w = p.w*(1+sq), h = p.h*(1-sq);
+  const x = p.x, y = p.y;
+  if (power > 0) {
+    ctx.save(); ctx.globalAlpha = .35 + .2*Math.sin(t*20);
+    ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(x, y-h/2, 72, 0, 7); ctx.fill(); ctx.restore();
+  }
+  const run = p.onGround ? Math.sin(t*22)*10 : 6;
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x-8,y-30); ctx.lineTo(x-8-run,y-2);
+  ctx.moveTo(x+8,y-30); ctx.lineTo(x+8+run,y-2); ctx.stroke();
+  ctx.fillStyle = power>0 ? '#ffd23f' : '#222';
+  rr(x-w/2+6, y-h+38, w-12, h-62, 12); ctx.fill();
+  ctx.fillStyle = '#fff'; rr(x-7, y-h+40, 14, h-70, 4); ctx.fill();
+  ctx.strokeStyle = power>0 ? '#ffd23f' : '#222'; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(x+12,y-h+50); ctx.lineTo(x+30,y-h+40-run*.5); ctx.stroke();
+  ctx.fillStyle = '#111'; rr(x+26,y-h+24-run*.5,12,20,3); ctx.fill();
+  drawCircleImg(IMG.face, x, y-h+16, 32, power>0 ? '#ffd23f' : '#fff');
+}
+
+function drawObstacle(o) {
+  const x = o.x, y = o.top + Math.sin(t*6+o.wob)*(o.kind==='comment'?6:0);
+  if (o.kind === 'troll') {
+    ctx.fillStyle = '#5bbf4a'; rr(x,y+10,o.w,o.h-10,16); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x+16,y+28,7,0,7); ctx.arc(x+38,y+28,7,0,7); ctx.fill();
+    ctx.fillStyle = '#c00'; ctx.beginPath(); ctx.arc(x+16,y+29,3,0,7); ctx.arc(x+38,y+29,3,0,7); ctx.fill();
+    ctx.strokeStyle = '#123'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x+8,y+16); ctx.lineTo(x+22,y+22); ctx.moveTo(x+46,y+16); ctx.lineTo(x+32,y+22);
+    ctx.moveTo(x+16,y+48); ctx.lineTo(x+38,y+48); ctx.stroke();
+    ctx.fillStyle='#5bbf4a'; ctx.beginPath(); ctx.moveTo(x+6,y+14); ctx.lineTo(x+2,y); ctx.lineTo(x+16,y+10); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x+48,y+14); ctx.lineTo(x+52,y); ctx.lineTo(x+38,y+10); ctx.fill();
+  } else if (o.kind === 'algo') {
+    ctx.fillStyle = '#222'; rr(x,y,o.w,o.h,8); ctx.fill();
+    ctx.fillStyle = '#0f0'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('if(views<0)', x+o.w/2, y+20); ctx.fillText('hide();', x+o.w/2, y+36);
+  } else if (o.kind === 'comment') {
+    ctx.fillStyle = '#fff'; rr(x,y,o.w,o.h,12); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x+20,y+o.h); ctx.lineTo(x+14,y+o.h+12); ctx.lineTo(x+34,y+o.h); ctx.fill();
+    ctx.fillStyle = '#c0134f'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'center';
+    ctx.direction = 'rtl'; ctx.fillText(o.label, x+o.w/2, y+o.h/2+5); ctx.direction = 'ltr';
+  } else {
+    ctx.fillStyle = '#3d5afe'; rr(x,y,o.w,o.h,10); ctx.fill();
+    ctx.font = '30px Arial'; ctx.textAlign = 'center'; ctx.fillText('👎', x+o.w/2, y+o.h/2+10);
+  }
+}
+
+function drawItem(it) {
+  const y = it.y + Math.sin(it.t*5)*5;
+  if (it.kind === 'mic') {
+    ctx.save(); ctx.globalAlpha = .4; ctx.fillStyle = '#ffd23f';
+    ctx.beginPath(); ctx.arc(it.x,y,26+Math.sin(it.t*10)*4,0,7); ctx.fill(); ctx.restore();
+    ctx.font = '36px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🎤', it.x, y); ctx.textBaseline = 'alphabetic';
+    return;
+  }
+  const ring = it.kind === 'yonit' ? '#4fc3ff' : '#ff3d7f';
+  ctx.save(); ctx.globalAlpha = .35; ctx.fillStyle = ring;
+  ctx.beginPath(); ctx.arc(it.x, y, it.r + 6 + Math.sin(it.t*8)*2, 0, 7); ctx.fill(); ctx.restore();
+  drawCircleImg(IMG[it.kind], it.x, y, it.r, ring);
+}
+
+function drawBubble() {
+  if (!bubble) return;
+  ctx.font = 'bold 18px Arial'; ctx.direction = 'rtl';
+  const tw = Math.min(ctx.measureText(bubble.text).width + 24, W - 40);
+  const x = Math.min(player.x + 20, W - tw - 20), y = player.y - player.h - 64;
+  ctx.globalAlpha = Math.min(1, bubble.life*3);
+  ctx.fillStyle = '#fff'; rr(x, y, tw, 38, 14); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+12,y+38); ctx.lineTo(x+4,y+52); ctx.lineTo(x+28,y+38); ctx.fill();
+  ctx.fillStyle = '#1c1533'; ctx.textAlign = 'center';
+  ctx.fillText(bubble.text, x+tw/2, y+25, tw - 16);
+  ctx.direction = 'ltr'; ctx.globalAlpha = 1;
+}
+
+function drawHUD() {
+  ctx.direction = 'rtl'; ctx.textAlign = 'right';
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Arial';
+  ctx.fillText(`👥 ${fmt(score)} עוקבים`, W-20, 40);
+  ctx.font = '16px Arial'; ctx.fillStyle = '#ffe';
+  ctx.fillText(`שיא: ${fmt(best)}`, W-20, 64);
+  // collected counters
+  drawCircleImg(IMG.yonit, W-36, 96, 14, '#4fc3ff');
+  drawCircleImg(IMG.ilana, W-36, 130, 14, '#ff3d7f');
+  ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
+  ctx.fillText(`× ${counts.yonit}`, W-58, 102);
+  ctx.fillText(`× ${counts.ilana}`, W-58, 136);
+  if (power > 0) {
+    ctx.textAlign = 'left'; ctx.direction = 'ltr';
+    ctx.fillStyle = '#ffd23f'; rr(20,22,200*(power/5),14,7); ctx.fill();
+    ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.font = 'bold 16px Arial';
+    ctx.fillText('🎤 מצב חיקוי!', 220, 58);
+  }
+  ctx.direction = 'ltr';
+  ctx.fillStyle = '#e0002a'; rr(20, H-50, 70, 28, 6); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('● LIVE', 55, H-30);
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate((Math.random()-.5)*14, (Math.random()-.5)*14);
+  drawBG();
+  for (const it of items) drawItem(it);
+  for (const o of obstacles) drawObstacle(o);
+  drawPlayer();
+  for (const p of particles) { ctx.globalAlpha = p.life/.6; ctx.fillStyle = p.color; ctx.fillRect(p.x,p.y,6,6); }
+  ctx.globalAlpha = 1;
+  drawBubble();
+  if (state !== 'menu') drawHUD();
+  ctx.restore();
+}
+
+function loop(ts) {
+  const dt = Math.min(.033, (ts - last)/1000 || 0); last = ts;
+  if (state === 'playing') update(dt);
+  else { t += dt; if (shake > 0) shake -= dt; if (bubble) { bubble.life -= dt; if (bubble.life <= 0) bubble = null; } }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ---------- UI ----------
+let introPlayed = false;
+function showBest() { $('best').textContent = best ? `השיא שלך: ${fmt(best)} עוקבים` : ''; }
+function start() {
+  reset(); state = 'playing';
+  ['menu','over'].forEach(id => $(id).classList.add('hidden'));
+  if (!introPlayed) { introPlayed = true; sfx('intro', { force:true }); } else stopVoice();
+}
+$('startBtn').onclick = start;
+$('againBtn').onclick = start;
+$('menuBtn').onclick = () => { stopVoice(); $('over').classList.add('hidden'); $('menu').classList.remove('hidden'); state='menu'; introPlayed=false; reset(); showBest(); };
+
+addEventListener('keydown', e => {
+  if (['Space','ArrowUp','KeyW'].includes(e.code)) {
+    e.preventDefault();
+    if (state === 'playing') jump();
+    else if (state === 'menu' && !$('menu').classList.contains('hidden')) start();
+    else if (state === 'over' && !$('over').classList.contains('hidden')) start();
+  }
+});
+cv.addEventListener('pointerdown', e => { e.preventDefault(); jump(); });
+
+reset(); showBest();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
